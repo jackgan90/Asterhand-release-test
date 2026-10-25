@@ -12,7 +12,7 @@ on:
       fresh_vc_runtime:
         description: Remove preinstalled VC++ x64 on this disposable hosted runner before testing
         type: boolean
-        default: true
+        default: false
 permissions:
   contents: read
 jobs:
