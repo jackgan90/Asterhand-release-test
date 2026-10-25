@@ -1,0 +1,44 @@
+name: Public release installation
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: Public repository containing the release
+        required: true
+        default: jackgan90/Asterhand-release-test
+      tag:
+        description: Exact published release tag
+        required: true
+permissions:
+  contents: read
+jobs:
+  windows-install:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - name: Install from a single public installer
+        shell: powershell
+        env:
+          RELEASE_REPOSITORY: ${{ inputs.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          if ($env:RELEASE_REPOSITORY -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' -or $env:RELEASE_TAG -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') { throw 'Invalid release coordinates' }
+          $base = "https://github.com/$env:RELEASE_REPOSITORY/releases/download/$env:RELEASE_TAG"
+          Invoke-WebRequest "$base/test-release-download.ps1" -OutFile "$env:RUNNER_TEMP/test-release-download.ps1" -UseBasicParsing
+          Invoke-WebRequest "$base/SHA256SUMS" -OutFile "$env:RUNNER_TEMP/SHA256SUMS" -UseBasicParsing
+          $entry = @(Get-Content "$env:RUNNER_TEMP/SHA256SUMS" | Where-Object { $_ -match '^[a-f0-9]{64}  test-release-download.ps1$' })
+          if ($entry.Count -ne 1 -or ($entry[0] -split '  ')[0] -ne (Get-FileHash "$env:RUNNER_TEMP/test-release-download.ps1").Hash.ToLowerInvariant()) { throw 'Installation test checksum mismatch' }
+          & "$env:RUNNER_TEMP/test-release-download.ps1" -Repository $env:RELEASE_REPOSITORY -Tag $env:RELEASE_TAG -OutputDirectory "$env:RUNNER_TEMP/asterhand-clean-install" -RequireFreshDependencies
+      - name: Preserve installation report
+        if: always()
+        shell: powershell
+        run: |
+          $report = "$env:RUNNER_TEMP/asterhand-clean-install/download-install.json"
+          if (Test-Path $report) {
+            '```json' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            Get-Content $report | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            '```' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+
